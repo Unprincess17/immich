@@ -58,6 +58,7 @@
     showSimpleControls?: boolean;
     autoFitBounds?: boolean;
     onViewportChange?: (viewport: { bounds: maplibregl.LngLatBounds; zoom: number }) => void;
+    fullscreenContainer?: HTMLElement | string;
   }
 
   let {
@@ -77,6 +78,7 @@
     showSimpleControls = true,
     autoFitBounds = true,
     onViewportChange = () => {},
+    fullscreenContainer = undefined,
   }: Props = $props();
 
   // Calculate initial bounds from markers once during initialization
@@ -408,7 +410,7 @@
 
       {#if !simplified}
         <GeolocateControl position="top-left" />
-        <FullscreenControl position="top-left" />
+        <FullscreenControl position="top-left" container={fullscreenContainer} />
         <ScaleControl />
         <AttributionControl compact={false} />
       {/if}
