@@ -420,10 +420,10 @@
             }}
             class="px-4 py-2 rounded-full shadow-md bg-primary text-white dark:bg-gray-800 dark:text-gray-100 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
             aria-label="Show photos in current view"
-            title="Show photos in current view"
+            title={$t('show_photos_in_view', { values: { count: viewportAssets.length } })}
           >
-            <!-- TODO(Shufan): i18n; flexible layout for tight width -->
-            Show photos in view ({viewportAssets.length})
+            <!-- TODO(Shufan): flexible layout for tight width -->
+            {$t('show_photos_in_view', { values: { count: viewportAssets.length } })}
           </button>
         </div>
       {/if}
