@@ -57,6 +57,7 @@
     rounded?: boolean;
     showSimpleControls?: boolean;
     autoFitBounds?: boolean;
+    onViewportChange?: (viewport: { bounds: maplibregl.LngLatBounds; zoom: number }) => void;
   }
 
   let {
@@ -75,6 +76,7 @@
     rounded = false,
     showSimpleControls = true,
     autoFitBounds = true,
+    onViewportChange = () => {},
   }: Props = $props();
 
   // Calculate initial bounds from markers once during initialization
@@ -96,6 +98,62 @@
 
   const theme = $derived($mapSettings.allowDarkMode ? themeManager.value : Theme.LIGHT);
   const styleUrl = $derived(theme === Theme.DARK ? $serverConfig.mapDarkStyleUrl : $serverConfig.mapLightStyleUrl);
+
+  // Hidden layer ids to enable queryRenderedFeatures on GeoJSON source
+  const QUERY_POINT_LAYER_ID = 'geojson-points-query';
+  const QUERY_CLUSTER_LAYER_ID = 'geojson-clusters-query';
+
+  // Bound based query for assets in viewport
+  export function getAssetsInViewport(): string[] {
+    if (!map || !mapMarkers) {
+      return [];
+    }
+
+    try {
+      const bounds = map.getBounds();
+      const assetIds = mapMarkers
+        .filter((marker) => bounds.contains([marker.lon, marker.lat]))
+        .map((marker) => marker.id);
+
+      return assetIds;
+    } catch (error) {
+      console.error('Error getting assets in viewport:', error);
+      return [];
+    }
+  }
+
+  // Rendered features based query for assets in viewport
+  export async function getRenderedAssetsInViewport(): Promise<string[]> {
+    if (!map) {
+      return [];
+    }
+
+    try {
+      const features = map.queryRenderedFeatures(undefined, {
+        layers: [QUERY_POINT_LAYER_ID, QUERY_CLUSTER_LAYER_ID],
+      });
+
+      const assetIds: string[] = [];
+
+      for (const feature of features) {
+        if (feature.properties?.cluster_id) {
+          const source = map.getSource('geojson') as GeoJSONSource;
+          const leaves = await source.getClusterLeaves(feature.properties.cluster_id, Infinity, 0);
+          for (const leaf of leaves) {
+            const id = leaf.properties?.id;
+            if (id) assetIds.push(id);
+          }
+        } else if (feature.properties?.id) {
+          assetIds.push(feature.properties.id);
+        }
+      }
+
+      return [...new Set(assetIds)];
+    } catch (error) {
+      console.error('Error getting rendered assets in viewport:', error);
+      return [];
+    }
+  }
 
   export function addClipMapMarker(lng: number, lat: number) {
     if (map) {
@@ -139,6 +197,10 @@
         marker = new maplibregl.Marker().setLngLat([lng, lat]).addTo(map);
       }
     }
+  }
+
+  function handleViewportChange(event: maplibregl.MapMouseEvent) {
+    console.log('Viewport changed', event);
   }
 
   type FeaturePoint = Feature<Point, { id: string; city: string | null; state: string | null; country: string | null }>;
@@ -298,6 +360,42 @@
   onload={(event) => {
     event.setMaxZoom(18);
     event.on('click', handleMapClick);
+
+    // Add hidden layers to enable queryRenderedFeatures on the GeoJSON source
+    try {
+      if (!event.getLayer(QUERY_POINT_LAYER_ID)) {
+        event.addLayer({
+          id: QUERY_POINT_LAYER_ID,
+          type: 'circle',
+          source: 'geojson',
+          filter: ['!', ['has', 'point_count']],
+          paint: { 'circle-radius': 1, 'circle-opacity': 0 },
+        });
+      }
+      if (!event.getLayer(QUERY_CLUSTER_LAYER_ID)) {
+        event.addLayer({
+          id: QUERY_CLUSTER_LAYER_ID,
+          type: 'circle',
+          source: 'geojson',
+          filter: ['has', 'point_count'],
+          paint: { 'circle-radius': 1, 'circle-opacity': 0 },
+        });
+      }
+    } catch (e) {
+      console.warn('Unable to add query layers for rendered-features queries', e);
+    }
+
+    event.on('moveend', () => {
+      const bounds = event.getBounds();
+      const zoom = event.getZoom();
+      onViewportChange({ bounds, zoom });
+    });
+    event.on('zoomend', () => {
+      const bounds = event.getBounds();
+      const zoom = event.getZoom();
+      onViewportChange({ bounds, zoom });
+    });
+
     if (!simplified) {
       event.addControl(new GlobeControl(), 'top-left');
     }
